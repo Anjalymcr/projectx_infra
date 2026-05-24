@@ -1,0 +1,27 @@
+---
+title: Welcome to ProjectX-Infra
+description: A production-grade Infrastructure-as-Code platform for deploying and managing AWS infrastructure using Terraform, EKS, and a layered modular architecture.
+---
+
+ProjectX-Infra is a comprehensive Infrastructure-as-Code (IaC) platform that provisions and manages a full AWS environment in `ap-southeast-2`. Built on Terraform with a layered deployment model, it gives your team a repeatable, auditable, and secure foundation for running containerised workloads on Amazon EKS.
+
+## Key Features
+
+- **Layered Architecture** -- Six logical layers (Network, Storage, IAM, Compute, Analytics, Distribution) that can be planned, applied, and destroyed independently.
+- **Docker Workbench** -- A self-contained Ubuntu 22.04 development environment pre-loaded with Terraform 1.5.2, kubectl 1.27.5, Helm 3.12.3, and AWS CLI v2 so every team member works from an identical toolchain.
+- **Makefile Orchestration** -- A single `Makefile` exposes every infrastructure operation (`make infra-apply`, `make eks-plan`, `make destroy-all`, etc.) to keep workflows simple and consistent.
+- **Multi-AZ Resilience** -- VPC networking spans three Availability Zones with dedicated NAT gateways per AZ, private and public subnet tiers, and Kubernetes-aware subnet tagging.
+- **Security by Default** -- Least-privilege IAM roles, Secrets Manager integration, private EKS API endpoints, and encrypted storage at every layer.
+- **Cost-Aware Design** -- Spot instance node groups, S3 lifecycle policies, and right-sized RDS instances keep cloud spend under control without sacrificing reliability.
+
+## What's Inside
+
+Explore the documentation to get up and running or to dive deeper into each component:
+
+- **[Architecture Overview](/architecture/overview/)** -- Understand the six-layer model, the repository layout, and how each component fits together.
+- **[Design Principles](/architecture/design-principles/)** -- Learn the engineering philosophy behind the platform: immutable infrastructure, pipeline-as-code, zero standing access, and more.
+- **[Network Architecture](/architecture/networking/)** -- Walk through VPC design, subnet addressing, NAT gateway topology, and Kubernetes networking tags.
+- **[Getting Started -- Prerequisites](/getting-started/prerequisites/)** -- Check the tools and access you need before your first deployment.
+- **[Getting Started -- Quickstart](/getting-started/quickstart/)** -- Go from a fresh clone to a running EKS cluster in minutes.
+- **[Layers](/layers/)** -- Detailed reference for each Terraform layer (Infra, Storage, IAM, EKS).
+- **[Operations](/operations/)** -- Day-2 runbooks covering deployments, rollbacks, monitoring, and incident response.

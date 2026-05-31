@@ -43,8 +43,9 @@ RUN curl -LO "https://get.helm.sh/helm-${HELM_VERSION}-linux-${TARGETARCH}.tar.g
     && install -o root -g root -m 0755 "linux-${TARGETARCH}/helm" /usr/local/bin/helm \
     && rm -rf "linux-${TARGETARCH}" "helm-${HELM_VERSION}-linux-${TARGETARCH}.tar.gz"
 
-# Install AWS CLI
-RUN curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip" \
+# Install AWS CLI (multi-arch)
+RUN if [ "$TARGETARCH" = "arm64" ]; then AWSARCH="aarch64"; else AWSARCH="x86_64"; fi \
+    && curl "https://awscli.amazonaws.com/awscli-exe-linux-${AWSARCH}.zip" -o "awscliv2.zip" \
     && unzip awscliv2.zip \
     && ./aws/install \
     && rm -rf awscliv2.zip aws/

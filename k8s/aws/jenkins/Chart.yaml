@@ -1,0 +1,10 @@
+apiVersion: v2
+name: projectx-jenkins
+description: Modern Jenkins for ProjectX
+type: application
+version: 1.1.0
+appVersion: 2.492.3
+dependencies:
+  - name: jenkins
+    version: 5.8.3
+    repository: https://charts.jenkins.io

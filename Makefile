@@ -24,11 +24,11 @@ infra-init:
 
 infra-plan: infra-init
 	@echo "=> Planning Infra Layer"
-	cd $(INFRA_DIR) && terraform plan -var-file=env.tfvars
+	cd $(INFRA_DIR) && terraform plan -var-file=../common.tfvars -var-file=env.tfvars
 
 infra-apply:
 	@echo "=> Deploying Infra Layer"
-	cd $(INFRA_DIR) && terraform apply -var-file=env.tfvars -auto-approve
+	cd $(INFRA_DIR) && terraform apply -var-file=../common.tfvars -var-file=env.tfvars -auto-approve
 
 ##################################################
 # LAYER 2: STORAGE (RDS, EFS, ECR, S3)
@@ -42,11 +42,11 @@ storage-init:
 
 storage-plan: storage-init
 	@echo "=> Planning Storage Layer"
-	cd $(STORAGE_DIR) && terraform plan -var-file=env.tfvars
+	cd $(STORAGE_DIR) && terraform plan -var-file=../common.tfvars -var-file=env.tfvars
 
 storage-apply: infra-apply
 	@echo "=> Deploying Storage Layer (RDS, Secrets, SGs)"
-	cd $(STORAGE_DIR) && terraform apply -var-file=env.tfvars -auto-approve
+	cd $(STORAGE_DIR) && terraform apply -var-file=../common.tfvars -var-file=env.tfvars -auto-approve
 
 ##################################################
 # LAYER 3: IAM (ROLES & POLICIES)
@@ -60,11 +60,11 @@ iam-init:
 
 iam-plan: iam-init
 	@echo "=> Planning IAM Layer"
-	cd $(IAM_DIR) && terraform plan -var-file=env.tfvars
+	cd $(IAM_DIR) && terraform plan -var-file=../common.tfvars -var-file=env.tfvars
 
 iam-apply: infra-apply
 	@echo "=> Deploying IAM Layer"
-	cd $(IAM_DIR) && terraform apply -var-file=env.tfvars -auto-approve
+	cd $(IAM_DIR) && terraform apply -var-file=../common.tfvars -var-file=env.tfvars -auto-approve
 
 ##################################################
 # LAYER 4: COMPUTE (EKS CLUSTER)
@@ -78,11 +78,11 @@ eks-init:
 
 eks-plan: eks-init
 	@echo "=> Planning EKS Layer"
-	cd $(EKS_DIR) && terraform plan -var-file=env.tfvars -var="my_ip_cidr=$(MY_IP)"
+	cd $(EKS_DIR) && terraform plan -var-file=../common.tfvars -var-file=env.tfvars -var="my_ip_cidr=$(MY_IP)"
 
 eks-apply: infra-apply iam-apply
-	@echo "=> Deploying EKS (Restricted to IP: $(MY_IP))"
-	cd $(EKS_DIR) && terraform apply -var-file=env.tfvars -var="my_ip_cidr=$(MY_IP)" -auto-approve
+	@echo "=> Deploying EKS Layer (Restricted to IP: $(MY_IP))"
+	cd $(EKS_DIR) && terraform apply -var-file=../common.tfvars -var-file=env.tfvars -var="my_ip_cidr=$(MY_IP)" -auto-approve
 
 ##################################################
 # ORCHESTRATION TARGETS (All Layers)
@@ -97,16 +97,16 @@ init-all: infra-init storage-init iam-init eks-init
 # Plan all layers in order (continues on failure so you see all results)
 plan-all:
 	@echo "=> Planning Layer 1: Infra"
-	-cd $(INFRA_DIR) && terraform init -input=false > /dev/null && terraform plan -var-file=env.tfvars
+	-cd $(INFRA_DIR) && terraform init -input=false > /dev/null && terraform plan -var-file=../common.tfvars -var-file=env.tfvars
 	@echo "=> Planning Layer 2: Storage"
-	-cd $(STORAGE_DIR) && terraform init -input=false > /dev/null && terraform plan -var-file=env.tfvars
+	-cd $(STORAGE_DIR) && terraform init -input=false > /dev/null && terraform plan -var-file=../common.tfvars -var-file=env.tfvars
 	@echo "=> Planning Layer 3: IAM"
-	-cd $(IAM_DIR) && terraform init -input=false > /dev/null && terraform plan -var-file=env.tfvars
+	-cd $(IAM_DIR) && terraform init -input=false > /dev/null && terraform plan -var-file=../common.tfvars -var-file=env.tfvars
 	@echo "=> Planning Layer 4: EKS"
-	-cd $(EKS_DIR) && terraform init -input=false > /dev/null && terraform plan -var-file=env.tfvars -var="my_ip_cidr=$(MY_IP)"
+	-cd $(EKS_DIR) && terraform init -input=false > /dev/null && terraform plan -var-file=../common.tfvars -var-file=env.tfvars -var="my_ip_cidr=$(MY_IP)"
 	@echo "=> All Layers Planned (check above for errors)"
 
-# Deploy layers in order: Infra -> Storage -> IAM -> EKS
+# Deploy layers in order: Infra -> Storage -> IAM -> EKS (includes ALB Controller)
 deploy-all: infra-apply storage-apply iam-apply eks-apply
 	@echo "=> Full Layered Stack Deployed Successfully!"
 
@@ -114,13 +114,13 @@ deploy-all: infra-apply storage-apply iam-apply eks-apply
 destroy-all:
 	@echo "=> DESTROYING ALL LAYERS (Reverse Order)"
 	@echo "=> Layer 4: EKS Cluster"
-	cd $(EKS_DIR) && terraform destroy -auto-approve -var-file=env.tfvars -var="my_ip_cidr=$(MY_IP)" || true
+	cd $(EKS_DIR) && terraform destroy -auto-approve -var-file=../common.tfvars -var-file=env.tfvars -var="my_ip_cidr=$(MY_IP)" || true
 	@echo "=> Layer 3: IAM Roles & Policies"
-	cd $(IAM_DIR) && terraform destroy -auto-approve -var-file=env.tfvars || true
+	cd $(IAM_DIR) && terraform destroy -auto-approve -var-file=../common.tfvars -var-file=env.tfvars || true
 	@echo "=> Layer 2: Storage (RDS, EFS, ECR, S3)"
-	cd $(STORAGE_DIR) && terraform destroy -auto-approve -var-file=env.tfvars || true
+	cd $(STORAGE_DIR) && terraform destroy -auto-approve -var-file=../common.tfvars -var-file=env.tfvars || true
 	@echo "=> Layer 1: Infra (VPC)"
-	cd $(INFRA_DIR) && terraform destroy -auto-approve -var-file=env.tfvars || true
+	cd $(INFRA_DIR) && terraform destroy -auto-approve -var-file=../common.tfvars -var-file=env.tfvars || true
 	@echo "=> All Layers Destroyed!"
 
 ##################################################
@@ -136,18 +136,14 @@ eks-auth:
 
 jenkins-deploy: eks-auth
 	@echo "=> Deploying Jenkins to [$(ENV)]"
-	helm upgrade --install jenkins $(K8S_JENKINS_DIR) \
-		--namespace jenkins --create-namespace \
-		--values $(K8S_JENKINS_DIR)/values-$(ENV).yaml
+	$(MAKE) -C k8s/aws/jenkins helm-deploy
 
 runners-deploy: eks-auth
 	@echo "=> Deploying Runners to [$(ENV)]"
-	helm upgrade --install runners $(K8S_RUNNERS_DIR) \
-		--namespace runners --create-namespace \
-		--values $(K8S_RUNNERS_DIR)/values-$(ENV).yaml
+	$(MAKE) -C k8s/aws/runners helm-deploy
 
 status: eks-auth
-	@echo "=> Showing Pods in [$(ENV)]"
+	@echo "=> Cluster Status for [$(ENV)]"
 	kubectl get pods -A
 
 ##################################################
@@ -157,16 +153,16 @@ status: eks-auth
 
 destroy-infra:
 	@echo "=> Destroying Infra Layer (VPC)"
-	cd $(INFRA_DIR) && terraform destroy -var-file=env.tfvars -auto-approve
+	cd $(INFRA_DIR) && terraform destroy -var-file=../common.tfvars -var-file=env.tfvars -auto-approve
 
 destroy-storage:
 	@echo "=> Destroying Storage Layer (RDS, EFS, ECR)"
-	cd $(STORAGE_DIR) && terraform destroy -var-file=env.tfvars -auto-approve
+	cd $(STORAGE_DIR) && terraform destroy -var-file=../common.tfvars -var-file=env.tfvars -auto-approve
 
 destroy-iam:
 	@echo "=> Destroying IAM Layer"
-	cd $(IAM_DIR) && terraform destroy -var-file=env.tfvars -auto-approve
+	cd $(IAM_DIR) && terraform destroy -var-file=../common.tfvars -var-file=env.tfvars -auto-approve
 
 destroy-eks:
 	@echo "=> Destroying EKS Layer"
-	cd $(EKS_DIR) && terraform destroy -var-file=env.tfvars -var="my_ip_cidr=$(MY_IP)" -auto-approve
+	cd $(EKS_DIR) && terraform destroy -var-file=../common.tfvars -var-file=env.tfvars -var="my_ip_cidr=$(MY_IP)" -auto-approve

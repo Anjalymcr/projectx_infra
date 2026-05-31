@@ -1,0 +1,70 @@
+persistence:
+  efsId: ""
+
+jenkins:
+  namespaceOverride: jenkins
+
+  persistence:
+    enabled: true
+    storageClass: "efs-sc"
+    size: 20Gi
+
+  controller:
+    image:
+      tag: 2.492.3-jdk17
+
+    nodeSelector:
+      role: system
+
+    serviceAccount:
+      create: true
+      annotations:
+        eks.amazonaws.com/role-arn: "TEMP_HOLDER"
+
+    ingress:
+      enabled: true
+      ingressClassName: alb
+      annotations:
+        # alb.ingress.kubernetes.io/scheme: internal
+        alb.ingress.kubernetes.io/scheme: internet-facing
+        alb.ingress.kubernetes.io/target-type: ip
+        alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}]'
+        alb.ingress.kubernetes.io/healthcheck-path: /login
+      hostName: ""
+
+    JCasC:
+      defaultConfig: false
+      configScripts:
+        jenkins-config: |
+          jenkins:
+            securityRealm:
+              local:
+                allowsSignup: false
+                users:
+                  - id: "${chart-admin-username}"
+                    password: "${chart-admin-password}"
+            authorizationStrategy:
+              loggedInUsersCanDoAnything:
+                allowAnonymousRead: false
+            numExecutors: 0
+            clouds:
+              - kubernetes:
+                  name: "kubernetes"
+                  serverUrl: "https://kubernetes.default"
+                  jenkinsUrl: "http://jenkins.jenkins.svc.cluster.local:8080"
+                  jenkinsTunnel: "jenkins-agent.jenkins.svc.cluster.local:50000"
+                  namespace: "jenkins"
+                  templates:
+                    - name: "default"
+                      label: "kubernetes-worker"
+                      nodeSelector: "role=runners"
+                      containers:
+                        - name: "jnlp"
+                          image: "jenkins/inbound-agent:3273.v4cfe589b_fd83-1"
+                          workingDir: "/home/jenkins/agent"
+
+    installPlugins:
+      - kubernetes:4029.v5712230ccb_f8
+      - workflow-aggregator:596.v8c21c963d92d
+      - git:5.2.1
+      - configuration-as-code:1963.v24e046127a_3f

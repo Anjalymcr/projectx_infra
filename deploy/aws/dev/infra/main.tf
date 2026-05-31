@@ -26,12 +26,12 @@ module "vpc" {
   # K8S INTEGRATION: These tags are required for the AWS Load Balancer
   # Controller to find your subnets automatically.
   public_subnet_tags = {
-    "kubernetes.io/cluster/${var.environment}-eks-cluster" = "shared"
-    "kubernetes.io/role/elb"                               = "1"
+    "kubernetes.io/cluster/${var.environment}-projectx-cluster" = "shared"
+    "kubernetes.io/role/elb"                                    = "1"
   }
 
   private_subnet_tags = {
-    "kubernetes.io/cluster/${var.environment}-eks-cluster" = "shared"
+    "kubernetes.io/cluster/${var.environment}-projectx-cluster" = "shared"
     "kubernetes.io/role/internal-elb"                      = "1"
   }
 }

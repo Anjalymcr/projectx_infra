@@ -4,3 +4,4 @@
 *.tfstate
 *.tfstate.backup
 .terraform.lock.hcl
+k8s/aws/jenkins/storage-class.yaml

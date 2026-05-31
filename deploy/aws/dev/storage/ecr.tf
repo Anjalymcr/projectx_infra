@@ -33,7 +33,7 @@ EOF
 # 1. Primary App Registry (Where your VeloCloud clone code will live)
 resource "aws_ecr_repository" "projectx_app" {
   name                 = "${var.environment}-projectx-app"
-  image_tag_mutability = "MUTABLE"
+  image_tag_mutability = "IMMUTABLE"
 
   # SECURITY: Scanning for vulnerabilities on every push
   image_scanning_configuration {
@@ -46,7 +46,7 @@ resource "aws_ecr_repository" "projectx_app" {
 # 2. Infra Tooling Registry (Where your Workbench image will live)
 resource "aws_ecr_repository" "infra_tools" {
   name                 = "${var.environment}-infra-tools"
-  image_tag_mutability = "MUTABLE"
+  image_tag_mutability = "IMMUTABLE"
 
   image_scanning_configuration {
     scan_on_push = true

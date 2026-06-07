@@ -27,27 +27,26 @@ The VPC is divided into two tiers -- **private** and **public** -- each replicat
 | `private-ap-southeast-2a` | `10.0.1.0/24` | ap-southeast-2a | Private | EKS worker nodes, RDS, EFS mount targets |
 | `private-ap-southeast-2b` | `10.0.2.0/24` | ap-southeast-2b | Private | EKS worker nodes, RDS, EFS mount targets |
 | `private-ap-southeast-2c` | `10.0.3.0/24` | ap-southeast-2c | Private | EKS worker nodes, RDS, EFS mount targets |
-| `public-ap-southeast-2a` | `10.0.101.0/24` | ap-southeast-2a | Public | NAT gateway, ALB, bastion (if needed) |
-| `public-ap-southeast-2b` | `10.0.102.0/24` | ap-southeast-2b | Public | NAT gateway, ALB |
-| `public-ap-southeast-2c` | `10.0.103.0/24` | ap-southeast-2c | Public | NAT gateway, ALB |
+| `public-ap-southeast-2a` | `10.0.101.0/24` | ap-southeast-2a | Public | NAT gateway, ALB |
+| `public-ap-southeast-2b` | `10.0.102.0/24` | ap-southeast-2b | Public | ALB |
+| `public-ap-southeast-2c` | `10.0.103.0/24` | ap-southeast-2c | Public | ALB |
 
 Each `/24` subnet provides 251 usable IP addresses (256 minus 5 reserved by AWS). Private subnets use the `10.0.1-3.0/24` range while public subnets use `10.0.101-103.0/24`, keeping the two tiers clearly separated in the address space.
 
 ## NAT Gateway Topology
 
-The platform deploys **one NAT gateway per Availability Zone**, placed in the corresponding public subnet. Each private subnet's route table points to the NAT gateway in its own AZ.
+The platform deploys a **single NAT gateway** in one public subnet. All private subnets route their internet-bound traffic through this single gateway.
 
 ```
-AZ-a:  private-2a  -->  NAT-GW-a (in public-2a)  -->  Internet Gateway
-AZ-b:  private-2b  -->  NAT-GW-b (in public-2b)  -->  Internet Gateway
-AZ-c:  private-2c  -->  NAT-GW-c (in public-2c)  -->  Internet Gateway
+AZ-a:  private-2a  ──┐
+AZ-b:  private-2b  ──┼──>  NAT-GW (in public-2a)  -->  Internet Gateway
+AZ-c:  private-2c  ──┘
 ```
 
-This triple-NAT design provides:
+This single-NAT design is a **cost optimisation** for the dev environment:
 
-- **High availability** -- If one AZ experiences an outage, the other two AZs retain independent internet egress. There is no single point of failure.
-- **Reduced cross-AZ data transfer costs** -- Traffic from a private subnet exits through the NAT gateway in the same AZ, avoiding inter-AZ data transfer charges (which AWS bills at ~$0.01/GB).
-- **Better throughput** -- Each NAT gateway supports up to 45 Gbps. Distributing traffic across three gateways triples the aggregate egress capacity.
+- **Lower cost** -- One NAT gateway (~$32/month) instead of three (~$96/month).
+- **Trade-off** -- Single point of failure. If the NAT gateway's AZ goes down, all private subnets lose internet egress. Acceptable for dev; production should use `one_nat_gateway_per_az = true` for high availability.
 
 ## VPC Endpoints
 
@@ -66,25 +65,23 @@ For the AWS Load Balancer Controller to automatically discover subnets when prov
 | Tag Key | Value | Purpose |
 |---------|-------|---------|
 | `kubernetes.io/role/internal-elb` | `1` | Marks these subnets as candidates for internal (private) load balancers. |
-| `kubernetes.io/cluster/projectx-cluster` | `shared` | Associates the subnet with the EKS cluster for controller discovery. |
+| `kubernetes.io/cluster/dev-projectx-cluster` | `shared` | Associates the subnet with the EKS cluster for controller discovery. |
 
 ### Public Subnets
 
 | Tag Key | Value | Purpose |
 |---------|-------|---------|
 | `kubernetes.io/role/elb` | `1` | Marks these subnets as candidates for internet-facing load balancers. |
-| `kubernetes.io/cluster/projectx-cluster` | `shared` | Associates the subnet with the EKS cluster for controller discovery. |
+| `kubernetes.io/cluster/dev-projectx-cluster` | `shared` | Associates the subnet with the EKS cluster for controller discovery. |
 
 The `shared` value (rather than `owned`) allows multiple clusters or external resources to coexist in the same subnets if needed.
 
 ## Route Tables
 
-The layer creates **four route tables**:
+The layer creates **two route tables**:
 
 1. **Public route table** (shared by all three public subnets) -- Default route `0.0.0.0/0` points to the Internet Gateway.
-2. **Private route table AZ-a** -- Default route `0.0.0.0/0` points to NAT-GW-a.
-3. **Private route table AZ-b** -- Default route `0.0.0.0/0` points to NAT-GW-b.
-4. **Private route table AZ-c** -- Default route `0.0.0.0/0` points to NAT-GW-c.
+2. **Private route table** (shared by all three private subnets) -- Default route `0.0.0.0/0` points to the single NAT gateway.
 
 The S3 Gateway endpoint automatically injects its prefix list route into all four route tables.
 

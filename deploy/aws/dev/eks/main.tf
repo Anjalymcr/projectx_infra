@@ -415,3 +415,84 @@ module "jenkins_irsa_role" {
 
     depends_on = [module.eks]
   }
+
+
+ # =============================================================
+  # 9. CLUSTER INFRASTRUCTURE (External DNS)
+  # =============================================================
+
+  module "external_dns_irsa_role" {
+    source  = "terraform-aws-modules/iam/aws//modules/iam-role-for-service-accounts-eks"
+    version = "~> 5.0"
+
+    role_name                  = "${var.environment}-external-dns-role"
+    attach_external_dns_policy = true
+
+    external_dns_hosted_zone_arns = [
+      "arn:aws:route53:::hostedzone/${var.route53_zone_id}"
+    ]
+
+    oidc_providers = {
+      ex = {
+        provider_arn               = module.eks.oidc_provider_arn
+        namespace_service_accounts = ["kube-system:external-dns"]
+      }
+    }
+  }
+
+  resource "helm_release" "external_dns" {
+    name       = "external-dns"
+    repository = "https://kubernetes-sigs.github.io/external-dns/"
+    chart      = "external-dns"
+    namespace  = "kube-system"
+    version    = "1.14.4"
+
+    set {
+      name  = "provider"
+      value = "aws"
+    }
+
+    set {
+      name  = "aws.region"
+      value = var.region
+    }
+
+    set {
+      name  = "domainFilters[0]"
+      value = "projectx.internal"
+    }
+
+    set {
+      name  = "policy"
+      value = "sync"
+    }
+
+    set {
+      name  = "txtOwnerId"
+      value = var.route53_zone_id
+    }
+
+    set {
+      name  = "serviceAccount.create"
+      value = "true"
+    }
+
+    set {
+      name  = "serviceAccount.name"
+      value = "external-dns"
+    }
+
+    set {
+      name  = "serviceAccount.annotations.eks\\.amazonaws\\.com/role-arn"
+      value = module.external_dns_irsa_role.iam_role_arn
+    }
+
+    set {
+      name  = "nodeSelector.role"
+      value = "system"
+    }
+
+    depends_on = [module.eks]
+  }
+
+

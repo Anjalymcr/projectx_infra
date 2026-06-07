@@ -25,13 +25,14 @@ jenkins:
       enabled: true
       ingressClassName: alb
       annotations:
-        # alb.ingress.kubernetes.io/scheme: internal
-        alb.ingress.kubernetes.io/scheme: internet-facing
+        alb.ingress.kubernetes.io/scheme: internal
+        # alb.ingress.kubernetes.io/scheme: internet-facing
         alb.ingress.kubernetes.io/target-type: ip
         alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}]'
         alb.ingress.kubernetes.io/healthcheck-path: /login
-      hostName: ""
-
+        external-dns.alpha.kubernetes.io/hostname: jenkins.projectx.internal
+      hostName: jenkins.projectx.internal
+      
     JCasC:
       defaultConfig: false
       configScripts:

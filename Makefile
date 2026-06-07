@@ -8,6 +8,7 @@ AWS_PROFILE		?= svc-deployer
 INFRA_DIR    := deploy/aws/$(ENV)/infra
 STORAGE_DIR  := deploy/aws/$(ENV)/storage
 IAM_DIR      := deploy/aws/$(ENV)/iam
+DNS_DIR      := deploy/aws/$(ENV)/dns
 EKS_DIR      := deploy/aws/$(ENV)/eks
 
 MY_IP := $(shell curl -s https://ifconfig.me)/32
@@ -67,8 +68,28 @@ iam-apply: infra-apply
 	cd $(IAM_DIR) && terraform apply -var-file=../common.tfvars -var-file=env.tfvars -auto-approve
 
 ##################################################
-# LAYER 4: COMPUTE (EKS CLUSTER)
+# LAYER 4: DNS (ROUTE53)
 ##################################################
+
+.PHONY: dns-init dns-plan dns-apply
+
+dns-init:
+	@echo "=> Initializing DNS Layer"
+	cd $(DNS_DIR) && terraform init
+
+dns-plan: dns-init
+	@echo "=> Planning DNS Layer"
+	cd $(DNS_DIR) && terraform plan -var-file=../common.tfvars -var-file=env.tfvars
+
+dns-apply: infra-apply
+	@echo "=> Deploying DNS Layer"
+	cd $(DNS_DIR) && terraform apply -var-file=../common.tfvars -var-file=env.tfvars -auto-approve
+
+##################################################
+# LAYER 5: COMPUTE (EKS CLUSTER)
+##################################################
+
+ROUTE53_ZONE_ID = $(shell cd $(DNS_DIR) && terraform output -raw zone_id 2>/dev/null)
 
 .PHONY: eks-init eks-plan eks-apply
 
@@ -78,11 +99,11 @@ eks-init:
 
 eks-plan: eks-init
 	@echo "=> Planning EKS Layer"
-	cd $(EKS_DIR) && terraform plan -var-file=../common.tfvars -var-file=env.tfvars -var="my_ip_cidr=$(MY_IP)"
+	cd $(EKS_DIR) && terraform plan -var-file=../common.tfvars -var-file=env.tfvars -var="my_ip_cidr=$(MY_IP)" -var="route53_zone_id=$(ROUTE53_ZONE_ID)"
 
-eks-apply: infra-apply iam-apply
+eks-apply: infra-apply iam-apply dns-apply
 	@echo "=> Deploying EKS Layer (Restricted to IP: $(MY_IP))"
-	cd $(EKS_DIR) && terraform apply -var-file=../common.tfvars -var-file=env.tfvars -var="my_ip_cidr=$(MY_IP)" -auto-approve
+	cd $(EKS_DIR) && terraform apply -var-file=../common.tfvars -var-file=env.tfvars -var="my_ip_cidr=$(MY_IP)" -var="route53_zone_id=$(ROUTE53_ZONE_ID)" -auto-approve
 
 ##################################################
 # ORCHESTRATION TARGETS (All Layers)
@@ -91,7 +112,7 @@ eks-apply: infra-apply iam-apply
 .PHONY: init-all plan-all deploy-all destroy-all
 
 # Initialize all layers
-init-all: infra-init storage-init iam-init eks-init
+init-all: infra-init storage-init iam-init dns-init eks-init
 	@echo "=> All Layers Initialized Successfully!"
 
 # Plan all layers in order (continues on failure so you see all results)
@@ -102,19 +123,23 @@ plan-all:
 	-cd $(STORAGE_DIR) && terraform init -input=false > /dev/null && terraform plan -var-file=../common.tfvars -var-file=env.tfvars
 	@echo "=> Planning Layer 3: IAM"
 	-cd $(IAM_DIR) && terraform init -input=false > /dev/null && terraform plan -var-file=../common.tfvars -var-file=env.tfvars
-	@echo "=> Planning Layer 4: EKS"
-	-cd $(EKS_DIR) && terraform init -input=false > /dev/null && terraform plan -var-file=../common.tfvars -var-file=env.tfvars -var="my_ip_cidr=$(MY_IP)"
+	@echo "=> Planning Layer 4: DNS"
+	-cd $(DNS_DIR) && terraform init -input=false > /dev/null && terraform plan -var-file=../common.tfvars -var-file=env.tfvars
+	@echo "=> Planning Layer 5: EKS"
+	-cd $(EKS_DIR) && terraform init -input=false > /dev/null && terraform plan -var-file=../common.tfvars -var-file=env.tfvars -var="my_ip_cidr=$(MY_IP)" -var="route53_zone_id=$(ROUTE53_ZONE_ID)"
 	@echo "=> All Layers Planned (check above for errors)"
 
-# Deploy layers in order: Infra -> Storage -> IAM -> EKS (includes ALB Controller)
-deploy-all: infra-apply storage-apply iam-apply eks-apply
+# Deploy layers in order: Infra -> Storage -> IAM -> DNS -> EKS (includes ALB Controller)
+deploy-all: infra-apply storage-apply iam-apply dns-apply eks-apply
 	@echo "=> Full Layered Stack Deployed Successfully!"
 
 # Destroy in reverse order: Apps -> EKS -> IAM -> Storage -> Infra
 destroy-all: destroy-apps
 	@echo "=> DESTROYING ALL LAYERS (Reverse Order)"
-	@echo "=> Layer 4: EKS Cluster"
-	cd $(EKS_DIR) && terraform destroy -auto-approve -var-file=../common.tfvars -var-file=env.tfvars -var="my_ip_cidr=$(MY_IP)" || true
+	@echo "=> Layer 5: EKS Cluster"
+	cd $(EKS_DIR) && terraform destroy -auto-approve -var-file=../common.tfvars -var-file=env.tfvars -var="my_ip_cidr=$(MY_IP)" -var="route53_zone_id=$(ROUTE53_ZONE_ID)" || true
+	@echo "=> Layer 4: DNS"
+	cd $(DNS_DIR) && terraform destroy -auto-approve -var-file=../common.tfvars -var-file=env.tfvars || true
 	@echo "=> Layer 3: IAM Roles & Policies"
 	cd $(IAM_DIR) && terraform destroy -auto-approve -var-file=../common.tfvars -var-file=env.tfvars || true
 	@echo "=> Layer 2: Storage (RDS, EFS, ECR, S3)"
@@ -202,7 +227,7 @@ destroy-apps: eks-auth
 ##################################################
 # Individual Destroy Targets
 ##################################################
-.PHONY: destroy-infra destroy-storage destroy-iam destroy-eks
+.PHONY: destroy-infra destroy-storage destroy-iam destroy-dns destroy-eks
 
 destroy-infra:
 	@echo "=> Destroying Infra Layer (VPC)"
@@ -216,6 +241,10 @@ destroy-iam:
 	@echo "=> Destroying IAM Layer"
 	cd $(IAM_DIR) && terraform destroy -var-file=../common.tfvars -var-file=env.tfvars -auto-approve
 
+destroy-dns:
+	@echo "=> Destroying DNS Layer"
+	cd $(DNS_DIR) && terraform destroy -var-file=../common.tfvars -var-file=env.tfvars -auto-approve
+
 destroy-eks:
 	@echo "=> Destroying EKS Layer"
-	cd $(EKS_DIR) && terraform destroy -var-file=../common.tfvars -var-file=env.tfvars -var="my_ip_cidr=$(MY_IP)" -auto-approve
+	cd $(EKS_DIR) && terraform destroy -var-file=../common.tfvars -var-file=env.tfvars -var="my_ip_cidr=$(MY_IP)" -var="route53_zone_id=$(ROUTE53_ZONE_ID)" -auto-approve

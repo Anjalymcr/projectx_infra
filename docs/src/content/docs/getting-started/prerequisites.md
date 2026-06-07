@@ -12,7 +12,7 @@ Before you begin working with ProjectX-Infra, make sure you have the following t
 | **Git** | 2.x | Clone the repository and manage version control. |
 | **AWS CLI** | v2 (2.x) | Authenticate with AWS and manage credentials. Pre-installed in the workbench. |
 | **Terraform** | >= 1.0.0 (workbench ships 1.5.2) | Provision and manage all infrastructure layers. Pre-installed in the workbench. |
-| **kubectl** | 1.27.x (workbench ships 1.27.5) | Interact with the EKS Kubernetes cluster. Pre-installed in the workbench. |
+| **kubectl** | 1.31.x | Interact with the EKS Kubernetes cluster. Pre-installed in the workbench. |
 | **Helm** | 3.x (workbench ships 3.12.3) | Deploy Kubernetes Helm charts for cluster add-ons. Pre-installed in the workbench. |
 
 > **Tip:** The Docker workbench image (Ubuntu 22.04) bundles Terraform, kubectl, Helm, and the AWS CLI at tested, compatible versions. If you use the workbench you only need **Docker Desktop** and **Git** installed on your host machine.
@@ -47,7 +47,7 @@ Once Docker Desktop is running and you have cloned the repository, the fastest w
 make docker-build   # Build the workbench image
 make docker-dev     # Launch an interactive shell inside the container
 terraform version   # Should print Terraform v1.5.2
-kubectl version --client  # Should print v1.27.5
+kubectl version --client  # Should print v1.31.x
 helm version        # Should print v3.12.3
 aws --version       # Should print aws-cli/2.x
 ```

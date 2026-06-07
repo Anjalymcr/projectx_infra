@@ -2,11 +2,11 @@
 title: Architecture Overview
 ---
 
-ProjectX-Infra uses a **six-layer strategic model** to organise AWS infrastructure into isolated, independently deployable Terraform stacks. Each layer has a clear responsibility boundary, its own state file, and well-defined inputs and outputs. This separation lets teams plan, apply, and destroy individual layers without risking unrelated resources.
+ProjectX-Infra uses a **layered model** to organise AWS infrastructure into isolated, independently deployable Terraform stacks. Each layer has a clear responsibility boundary, its own state file, and well-defined inputs and outputs. This separation lets teams plan, apply, and destroy individual layers without risking unrelated resources.
 
-## The Six-Layer Model
+## The Layered Model
 
-### Layer 1 -- Network & Identity
+### Layer 1 -- Network & Infrastructure
 
 **Status:** Implemented
 
@@ -14,7 +14,7 @@ Provisions the foundational network fabric that every other layer builds on.
 
 - VPC with CIDR `10.0.0.0/16`
 - 3 public subnets and 3 private subnets across `ap-southeast-2a`, `ap-southeast-2b`, and `ap-southeast-2c`
-- One NAT gateway per Availability Zone for high-availability egress
+- Single NAT gateway for cost-optimised egress (dev environment)
 - VPC S3 Gateway endpoint for private S3 access without traversing the internet
 - DNS hostnames and DNS resolution enabled
 - Kubernetes-specific subnet tags for ALB Ingress Controller auto-discovery
@@ -27,11 +27,11 @@ See [Network Architecture](/architecture/networking/) for full details.
 
 Creates the data stores, artifact registries, and secret vaults used by applications.
 
-- **Amazon RDS** -- Managed relational database (PostgreSQL) in a private subnet group
-- **Amazon EFS** -- Elastic file system for shared persistent storage across pods
-- **Amazon ECR** -- Container image repositories with lifecycle policies
-- **Amazon S3** -- Object storage buckets for application data, logs, and Terraform state
-- **AWS Secrets Manager** -- Encrypted secret storage for database credentials and API keys
+- **Amazon RDS** -- MySQL 8.0 database (`db.t3.micro`, 20GB gp3) for application metrics
+- **Amazon EFS** -- Encrypted elastic file system for Jenkins persistent storage
+- **Amazon ECR** -- Two container image repositories (`projectx-app`, `infra-tools`) with IMMUTABLE tags and lifecycle policies
+- **Amazon S3** -- Four buckets (tf-state, jenkins-artifacts, analytics, release) with versioning and public access blocked
+- **AWS Secrets Manager** -- Auto-generated database credentials with immediate deletion on destroy
 
 ### Layer 3 -- Identity & Access
 
@@ -39,88 +39,66 @@ Creates the data stores, artifact registries, and secret vaults used by applicat
 
 Defines the IAM posture for the entire platform.
 
-- IAM roles for EKS cluster, node groups, and Fargate profiles
+- IAM roles for EKS cluster and node groups
 - IAM policies scoped to least-privilege per service
-- IRSA (IAM Roles for Service Accounts) trust relationships
+- `ProjectX-InfraProvisionerRole` for cluster admin access
 - Instance profiles for EC2-backed workloads
 
-### Layer 4 -- Compute & Orchestration
+### Layer 4 -- DNS
 
 **Status:** Implemented
 
-Deploys the Kubernetes control plane and worker nodes.
+Manages private DNS for internal service discovery.
 
-- **Amazon EKS** cluster (Kubernetes 1.27) with a private API endpoint
-- Managed node groups using a mix of on-demand and spot instances
-- Cluster add-ons: CoreDNS, kube-proxy, VPC CNI, EBS CSI driver
-- OIDC provider for IRSA integration
-- Kubeconfig generation for operator access
+- **Route53 Private Hosted Zone** -- `projectx.internal` associated with the VPC
+- ExternalDNS controller (deployed in EKS layer) automatically creates records from Kubernetes Ingress annotations
 
-### Layer 5 -- Analytics & Observability
+### Layer 5 -- Compute & Orchestration
 
-**Status:** Planned
+**Status:** Implemented
 
-Will provide data analytics and platform-wide observability.
+Deploys the Kubernetes control plane, worker nodes, and all cluster infrastructure.
 
-- Amazon Athena for serverless SQL queries over S3 data lakes
-- AWS Glue for ETL cataloguing and data transformation
-- CloudWatch dashboards, alarms, and log insights
-- Prometheus and Grafana deployed via Helm into EKS
+- **Amazon EKS** cluster (Kubernetes 1.31) with public and private API endpoints
+- Managed node groups: system (ON_DEMAND `t3.medium`) and runners (SPOT `t3.large`)
+- Cluster addons: CoreDNS, kube-proxy, VPC CNI, EBS CSI driver, EFS CSI driver
+- **AWS Load Balancer Controller** (Helm v1.8.1) for ALB Ingress
+- **Secrets Store CSI Driver** (Helm v1.4.7) + AWS Provider for Secrets Manager integration
+- **Cluster Autoscaler** (Helm v9.43.2) for runner node scaling
+- **Fluent Bit** (Helm v0.47.10) for CloudWatch log shipping from all nodes
+- **ExternalDNS** (Helm v1.14.4) for automatic Route53 record management
+- IRSA roles for all components (7 roles total)
 
-### Layer 6 -- Distribution & Routing
+### Kubernetes Applications
 
-**Status:** Planned
+**Status:** Implemented
 
-Will handle global content delivery and DNS management.
+Deployed via Helm charts in the `k8s/aws/` directory.
 
-- Amazon CloudFront distributions for static and dynamic content acceleration
-- AWS Route 53 hosted zones and DNS record management
-- ACM (AWS Certificate Manager) TLS certificates
-- WAF (Web Application Firewall) rules attached to CloudFront and ALB
+- **Jenkins** -- CI/CD controller with EFS persistence, IRSA for S3/ECR, ALB ingress, JCasC configuration
+- **Prometheus** -- Metrics collection with 10Gi gp2 storage, 7-day retention, Jenkins scrape config
+- **Grafana** -- Dashboards with 5Gi gp2 storage, ALB ingress, Prometheus datasource auto-discovery
 
 ## Repository Structure
 
 ```
 projectx-infra/
-├── infra/                  # Layer 1 -- Network & Identity
-│   ├── main.tf
-│   ├── variables.tf
-│   ├── outputs.tf
-│   └── terraform.tfvars
-├── storage/                # Layer 2 -- Persistence & Registries
-│   ├── main.tf
-│   ├── rds.tf
-│   ├── efs.tf
-│   ├── ecr.tf
-│   ├── s3.tf
-│   ├── variables.tf
-│   └── outputs.tf
-├── iam/                    # Layer 3 -- Identity & Access
-│   ├── main.tf
-│   ├── roles.tf
-│   ├── policies.tf
-│   ├── variables.tf
-│   └── outputs.tf
-├── eks/                    # Layer 4 -- Compute & Orchestration
-│   ├── main.tf
-│   ├── cluster.tf
-│   ├── node_groups.tf
-│   ├── addons.tf
-│   ├── variables.tf
-│   └── outputs.tf
-├── modules/                # Shared reusable Terraform modules
-├── scripts/                # Helper scripts (bootstrap, rotate, etc.)
-├── docker/                 # Workbench Dockerfile and configs
-│   └── Dockerfile
-├── docs/                   # This documentation site (Astro Starlight)
-├── diagrams/               # Architecture diagrams (draw.io / PNG)
-├── Makefile                # Orchestration entry point
+├── deploy/aws/dev/
+│   ├── common.tfvars        # Shared variables (project, owner, cost_center)
+│   ├── infra/               # Layer 1 -- VPC & Networking
+│   ├── storage/             # Layer 2 -- RDS, EFS, ECR, S3, Secrets
+│   ├── iam/                 # Layer 3 -- IAM Roles & Policies
+│   ├── dns/                 # Layer 4 -- Route53 Private Zone
+│   └── eks/                 # Layer 5 -- EKS, Addons, Helm Releases
+├── k8s/aws/
+│   ├── jenkins/             # Jenkins Helm chart & values
+│   ├── prometheus/          # Prometheus Helm chart & values
+│   └── grafana/             # Grafana Helm chart & values
+├── docs/                    # This documentation site (Astro Starlight)
+├── Dockerfile               # Dev container / workbench
+├── Makefile                 # Orchestration entry point
 └── README.md
 ```
-
-## Architecture Diagrams
-
-Visual architecture diagrams are maintained in the `diagrams/` directory at the repository root. They cover the VPC network topology, EKS cluster layout, IAM trust relationships, and data flow between layers. Refer to those diagrams alongside this documentation for a complete picture of the platform.
 
 ## Layer Dependencies
 
@@ -128,9 +106,10 @@ Layers are deployed in numerical order because each layer consumes outputs from 
 
 ```
 Layer 1 (Network)
-  └──> Layer 2 (Storage)    -- needs VPC ID, subnet IDs
-        └──> Layer 3 (IAM)  -- needs resource ARNs from Storage
-              └──> Layer 4 (EKS) -- needs VPC, subnets, IAM roles
+  ├──> Layer 2 (Storage)     -- needs VPC ID, subnet IDs
+  ├──> Layer 3 (IAM)         -- needs VPC for role scoping
+  └──> Layer 4 (DNS)         -- needs VPC for private hosted zone
+         └──> Layer 5 (EKS)  -- needs VPC, subnets, IAM roles, Route53 zone ID
 ```
 
-Terraform remote state data sources (`terraform_remote_state`) wire these dependencies together automatically. When destroying resources, work in reverse order (Layer 4 first, Layer 1 last) to avoid orphaned dependencies.
+Layers discover each other via data source tag lookups (not remote state). When destroying resources, work in reverse order (EKS first, Infra last) to avoid orphaned dependencies. The `make destroy-all` target handles this automatically.

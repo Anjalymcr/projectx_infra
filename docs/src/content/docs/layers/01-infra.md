@@ -65,7 +65,7 @@ module "vpc" {
 | **VPC** | CIDR `10.0.0.0/16` |
 | **Private Subnets** | 3 subnets, one per Availability Zone |
 | **Public Subnets** | 3 subnets, one per Availability Zone |
-| **NAT Gateways** | 3 provisioned (one per AZ), but `single_nat_gateway = true` routes all traffic through one to reduce cost |
+| **NAT Gateway** | 1 (`single_nat_gateway = true`) -- all private subnets share a single NAT gateway to reduce cost |
 | **Internet Gateway** | 1, attached to the VPC for public subnet routing |
 | **S3 VPC Gateway Endpoint** | Allows private access to S3 without traversing the internet |
 | **Route Table Associations** | Private subnets routed through NAT gateway; public subnets routed through Internet Gateway |

@@ -76,10 +76,12 @@ resource "aws_db_instance" "projectx" {
 | Engine | MySQL 8.0 |
 | Instance Class | `db.t3.micro` |
 | Storage Type | `gp3` |
+| Allocated Storage | 20 GB |
 | Database Name | `projectx_metrics` |
 | Password Source | AWS Secrets Manager |
 | Subnet Group | Private subnets only |
-| Security Group | Allows inbound on port 3306 |
+| Security Group | Allows inbound on port 3306 from VPC CIDR |
+| Deletion Protection | Disabled (set to `true` for production) |
 
 ### RDS Security Group
 
@@ -153,7 +155,7 @@ Two container image repositories for the project.
 ```hcl
 resource "aws_ecr_repository" "projectx_app" {
   name                 = "projectx-app"
-  image_tag_mutability = "MUTABLE"
+  image_tag_mutability = "IMMUTABLE"
 
   image_scanning_configuration {
     scan_on_push = true
@@ -164,7 +166,7 @@ resource "aws_ecr_repository" "projectx_app" {
 
 resource "aws_ecr_repository" "infra_tools" {
   name                 = "infra-tools"
-  image_tag_mutability = "MUTABLE"
+  image_tag_mutability = "IMMUTABLE"
 
   image_scanning_configuration {
     scan_on_push = true

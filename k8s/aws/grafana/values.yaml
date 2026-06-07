@@ -1,0 +1,30 @@
+grafana:
+  nodeSelector:
+    role: system
+
+  persistence:
+    enabled: true
+    storageClassName: "gp2"
+    size: 5Gi
+
+  ingress:
+    enabled: true
+    ingressClassName: alb
+    hosts: []
+    annotations:
+      alb.ingress.kubernetes.io/scheme: internet-facing
+      alb.ingress.kubernetes.io/target-type: ip
+      alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}]'
+      alb.ingress.kubernetes.io/healthcheck-path: /api/health
+
+  sidecar:
+    datasources:
+      enabled: true
+    dashboards:
+      enabled: true
+      provider:
+        disableDelete: true
+
+  grafana.ini:
+    auth.anonymous:
+      enabled: true

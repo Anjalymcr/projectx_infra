@@ -1,0 +1,25 @@
+prometheus:
+  alertmanager:
+    enabled: false
+
+  server:
+    nodeSelector:
+      role: system
+
+    persistentVolume:
+      enabled: true
+      storageClass: "gp2"
+      size: 10Gi
+
+      retention: "7d"
+
+    extraScrapeConfigs: |
+      - job_name: jenkins
+        honor_timestamps: true
+        scrape_interval: 1m
+        scrape_timeout: 10s
+        metrics_path: /prometheus/
+        scheme: http
+        static_configs:
+          - targets:
+            - jenkins.jenkins.svc.cluster.local:8080

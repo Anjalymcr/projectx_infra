@@ -60,6 +60,10 @@ module "eks" {
         value  = "runners"
         effect = "NO_SCHEDULE"
       }]
+      tags = {
+        "k8s.io/cluster-autoscaler/enabled"                             = "true"
+        "k8s.io/cluster-autoscaler/${var.environment}-projectx-cluster" = "owned"
+      }
     }
   }
 
@@ -220,3 +224,194 @@ module "jenkins_irsa_role" {
     }
   }
 }
+
+# =============================================================
+  # 6. CLUSTER INFRASTRUCTURE (Secrets Store CSI Driver)
+  # =============================================================
+
+  resource "helm_release" "secrets_store_csi_driver" {
+    name       = "secrets-store-csi-driver"
+    repository = "https://kubernetes-sigs.github.io/secrets-store-csi-driver/charts"
+    chart      = "secrets-store-csi-driver"
+    namespace  = "kube-system"
+    version    = "1.4.7"
+
+    set {
+      name  = "syncSecret.enabled"
+      value = "true"
+    }
+
+    set {
+      name  = "enableSecretRotation"
+      value = "true"
+    }
+
+    depends_on = [module.eks]
+  }
+
+  resource "helm_release" "secrets_store_csi_driver_provider_aws" {
+    name       = "secrets-store-csi-driver-provider-aws"
+    repository = "https://aws.github.io/secrets-store-csi-driver-provider-aws/"
+    chart      = "secrets-store-csi-driver-provider-aws"
+    namespace  = "kube-system"
+    version    = "0.3.11"
+
+    depends_on = [helm_release.secrets_store_csi_driver]
+  }
+
+# =============================================================
+  # 7. CLUSTER INFRASTRUCTURE (Cluster Autoscaler)
+# =============================================================
+
+  module "cluster_autoscaler_irsa_role" {
+    source  = "terraform-aws-modules/iam/aws//modules/iam-role-for-service-accounts-eks"
+    version = "~> 5.0"
+
+    role_name                        = "${var.environment}-cluster-autoscaler-role"
+    attach_cluster_autoscaler_policy = true
+    cluster_autoscaler_cluster_names = [module.eks.cluster_name]
+
+    oidc_providers = {
+      ex = {
+        provider_arn               = module.eks.oidc_provider_arn
+        namespace_service_accounts = ["kube-system:${var.environment}-cluster-autoscaler-aws-cluster-autoscaler"]
+      }
+    }
+  }
+
+  resource "helm_release" "cluster_autoscaler" {
+    name       = "${var.environment}-cluster-autoscaler"
+    repository = "https://kubernetes.github.io/autoscaler"
+    chart      = "cluster-autoscaler"
+    namespace  = "kube-system"
+    version    = "9.43.2"
+
+    set {
+      name  = "rbac.create"
+      value = "true"
+    }
+
+    set {
+      name  = "rbac.serviceAccount.annotations.eks\\.amazonaws\\.com/role-arn"
+      value = module.cluster_autoscaler_irsa_role.iam_role_arn
+    }
+
+    set {
+      name  = "cloudProvider"
+      value = "aws"
+    }
+
+    set {
+      name  = "awsRegion"
+      value = var.region
+    }
+
+    set {
+      name  = "autoDiscovery.clusterName"
+      value = module.eks.cluster_name
+    }
+
+    set {
+      name  = "autoDiscovery.enabled"
+      value = "true"
+    }
+
+    set {
+      name  = "nodeSelector.role"
+      value = "system"
+    }
+
+    depends_on = [module.eks]
+  }
+
+
+# =============================================================
+  # 8. CLUSTER INFRASTRUCTURE (Fluent Bit — Log Shipping)
+  # =============================================================
+
+  resource "aws_iam_policy" "fluentbit_cloudwatch" {
+    name = "${var.environment}-fluentbit-cloudwatch"
+    policy = jsonencode({
+      Version = "2012-10-17"
+      Statement = [
+        {
+          Effect = "Allow"
+          Action = [
+            "logs:CreateLogGroup",
+            "logs:CreateLogStream",
+            "logs:PutLogEvents",
+            "logs:DescribeLogGroups",
+            "logs:DescribeLogStreams",
+            "logs:PutRetentionPolicy"
+          ]
+          Resource = "arn:aws:logs:${var.region}:${data.aws_caller_identity.current.account_id}:log-group:/eks/${var.environment}-projectx-cluster/*"
+        }
+      ]
+    })
+    tags = local.common_tags
+  }
+
+  module "fluentbit_irsa_role" {
+    source  = "terraform-aws-modules/iam/aws//modules/iam-role-for-service-accounts-eks"
+    version = "~> 5.0"
+
+    role_name ="${var.environment}-fluentbit-role"
+    role_policy_arns = {
+      CloudWatch = aws_iam_policy.fluentbit_cloudwatch.arn
+    }
+
+    oidc_providers = {
+      ex = {
+        provider_arn               = module.eks.oidc_provider_arn
+        namespace_service_accounts = ["kube-system:${var.environment}-fluent-bit"]
+      }
+    }
+  }
+
+  resource "helm_release" "fluent_bit"{
+    name       = "${var.environment}-fluent-bit"
+    repository = "https://fluent.github.io/helm-charts"
+    chart      = "fluent-bit"
+    namespace  = "kube-system"
+    version    = "0.47.10"
+
+    set {
+      name  = "serviceAccount.create"
+      value = "true"
+    }
+
+    set {
+      name  = "serviceAccount.annotations.eks\\.amazonaws\\.com/role-arn"
+      value = module.fluentbit_irsa_role.iam_role_arn
+    }
+
+    set {
+      name  = "tolerations[0].key"
+      value = "dedicated"
+    }
+
+    set {
+      name  = "tolerations[0].value"
+      value = "runners"
+    }
+
+    set {
+      name  = "tolerations[0].effect"
+      value = "NoSchedule"
+    }
+
+    values = [<<-YAML
+      config:
+        outputs: |
+          [OUTPUT]
+              Name       cloudwatch_logs
+              Match      *
+              region     ${var.region}
+              log_group_name /eks/${var.environment}-projectx-cluster/containers
+              log_stream_prefix  fluent-bit-
+              auto_create_group true
+    YAML
+    ]
+
+    depends_on = [module.eks]
+  }

@@ -68,3 +68,4 @@ jenkins:
       - workflow-aggregator:596.v8c21c963d92d
       - git:5.2.1
       - configuration-as-code:1963.v24e046127a_3f
+      - prometheus:773.v3b_62d8178eec

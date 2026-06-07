@@ -110,8 +110,8 @@ plan-all:
 deploy-all: infra-apply storage-apply iam-apply eks-apply
 	@echo "=> Full Layered Stack Deployed Successfully!"
 
-# Destroy in reverse order: EKS -> IAM -> Storage -> Infra
-destroy-all:
+# Destroy in reverse order: Apps -> EKS -> IAM -> Storage -> Infra
+destroy-all: destroy-apps
 	@echo "=> DESTROYING ALL LAYERS (Reverse Order)"
 	@echo "=> Layer 4: EKS Cluster"
 	cd $(EKS_DIR) && terraform destroy -auto-approve -var-file=../common.tfvars -var-file=env.tfvars -var="my_ip_cidr=$(MY_IP)" || true
@@ -145,6 +145,59 @@ runners-deploy: eks-auth
 status: eks-auth
 	@echo "=> Cluster Status for [$(ENV)]"
 	kubectl get pods -A
+
+##################################################
+# PLATFORM SERVICES (MONITORING, LOGGING)
+##################################################
+
+K8S_PROMETHEUS_DIR := k8s/aws/prometheus
+K8S_GRAFANA_DIR    := k8s/aws/grafana
+
+prometheus-deploy: eks-auth
+	@echo "=> Deploying Prometheus to [$(ENV)]"
+	$(MAKE) -C $(K8S_PROMETHEUS_DIR) helm-deploy
+
+grafana-deploy: eks-auth
+	@echo "=> Deploying Grafana to [$(ENV)]"
+	$(MAKE) -C $(K8S_GRAFANA_DIR) helm-deploy
+
+platform-deploy: prometheus-deploy grafana-deploy
+	@echo "=> All Platform Services Deployed!"
+
+
+##################################################
+# App & Platform Destroy Targets
+##################################################
+.PHONY: destroy-apps destroy-jenkins destroy-runners destroy-prometheus destroy-grafana
+
+destroy-jenkins: eks-auth
+	@echo "=> Removing Jenkins"
+	-helm uninstall jenkins --namespace jenkins
+	-kubectl delete ingress jenkins -n jenkins
+	-kubectl delete namespace jenkins
+
+destroy-runners: eks-auth
+	@echo "=> Removing Runners"
+	-helm uninstall runners --namespace runners
+	-kubectl delete namespace runners
+
+destroy-prometheus: eks-auth
+	@echo "=> Removing Prometheus"
+	-helm uninstall prometheus --namespace monitoring
+	-kubectl delete namespace monitoring
+
+destroy-grafana: eks-auth
+	@echo "=> Removing Grafana"
+	-helm uninstall grafana --namespace monitoring
+
+destroy-apps: eks-auth
+	@echo "=> Removing all K8S apps and platform services"
+	-$(MAKE) destroy-jenkins
+	-$(MAKE) destroy-grafana
+	-$(MAKE) destroy-prometheus
+	-$(MAKE) destroy-runners
+	@echo "=> Waiting for ALB cleanup..."
+	sleep 30
 
 ##################################################
 # Individual Destroy Targets

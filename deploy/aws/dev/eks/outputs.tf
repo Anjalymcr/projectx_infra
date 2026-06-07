@@ -37,3 +37,13 @@ output "jenkins_irsa_role_arn" {
   description = "IAM role ARN for Jenkins"
   value       = module.jenkins_irsa_role.iam_role_arn
 }
+
+output "cluster_autoscaler_irsa_role_arn" {
+    description = "IAM role ARN for the Cluster Autoscaler"
+    value       = module.cluster_autoscaler_irsa_role.iam_role_arn
+  }
+
+  output "fluentbit_irsa_role_arn" {
+    description = "IAM role ARN for Fluent Bit"
+    value       = module.fluentbit_irsa_role.iam_role_arn
+  }
